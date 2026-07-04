@@ -14,6 +14,7 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appStartupProvider); // one-time: permissions + reschedule
     final routinesAsync = ref.watch(routinesProvider);
     final typesAsync = ref.watch(typesProvider);
     final nowMs = ref.watch(tickerProvider).value ?? DateTime.now().millisecondsSinceEpoch;

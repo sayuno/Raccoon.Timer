@@ -21,7 +21,7 @@ class _RoutineEditorScreenState extends ConsumerState<RoutineEditorScreen> {
   late final TextEditingController _name;
   int? _typeId;
   ScheduleMode _mode = ScheduleMode.daily;
-  TimeOfDay _dailyTime = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay _dailyTime = TimeOfDay.now();
   int _weekdaysMask = 0; // 0 = every day
   int _intervalHours = 2;
   int _intervalMinutes = 0;
@@ -75,7 +75,9 @@ class _RoutineEditorScreenState extends ConsumerState<RoutineEditorScreen> {
       oneShotAt: Value(_mode == ScheduleMode.oneShot ? _oneShotAt?.millisecondsSinceEpoch : null),
       intervalHours: Value(_mode == ScheduleMode.interval ? _intervalHours : null),
       intervalMinutes: Value(_mode == ScheduleMode.interval ? _intervalMinutes : null),
-      weekdaysMask: Value(_weekdaysMask == 0 ? null : _weekdaysMask),
+      // Weekday filter only belongs to daily mode; never leak it to interval/one-shot.
+      weekdaysMask:
+          Value(_mode == ScheduleMode.daily && _weekdaysMask != 0 ? _weekdaysMask : null),
       soundSourceId: Value(_soundSourceId),
       soundRef: Value(_soundRef),
       soundLabel: Value(_soundLabel),
@@ -141,6 +143,7 @@ class _RoutineEditorScreenState extends ConsumerState<RoutineEditorScreen> {
           _SoundPicker(
             sourceId: _soundSourceId,
             soundLabel: _soundLabel,
+            spotifyConnected: ref.watch(spotifyConnectedProvider).value ?? false,
             onSource: (id) => setState(() => _soundSourceId = id),
             onPickLocal: _pickLocalSound,
           ),
@@ -298,11 +301,27 @@ class _WhenPicker extends StatelessWidget {
         child: Row(children: [
           const Text('Todo dia às'),
           const Spacer(),
-          GestureDetector(
-            onTap: onDailyTime,
-            child: Text(
-              '${dailyTime.hour.toString().padLeft(2, '0')}:${dailyTime.minute.toString().padLeft(2, '0')}',
-              style: kCountdownStyle.copyWith(fontSize: 18),
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () {
+              onMode(ScheduleMode.daily);
+              onDailyTime();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0C0F15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.cyan),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(
+                  '${dailyTime.hour.toString().padLeft(2, '0')}:${dailyTime.minute.toString().padLeft(2, '0')}',
+                  style: kCountdownStyle.copyWith(fontSize: 18),
+                ),
+                const SizedBox(width: 6),
+                const Icon(Icons.schedule, size: 16, color: AppColors.cyan),
+              ]),
             ),
           ),
         ]),
@@ -470,9 +489,14 @@ class _Stepper extends StatelessWidget {
 
 class _SoundPicker extends StatelessWidget {
   const _SoundPicker(
-      {required this.sourceId, required this.soundLabel, required this.onSource, required this.onPickLocal});
+      {required this.sourceId,
+      required this.soundLabel,
+      required this.spotifyConnected,
+      required this.onSource,
+      required this.onPickLocal});
   final int sourceId;
   final String? soundLabel;
+  final bool spotifyConnected;
   final ValueChanged<int> onSource;
   final VoidCallback onPickLocal;
 
@@ -500,15 +524,17 @@ class _SoundPicker extends StatelessWidget {
         ]),
       ),
       Opacity(
-        opacity: 0.42,
+        opacity: spotifyConnected ? 1 : 0.42,
         child: _Radio(
-          selected: false,
-          onTap: () {},
-          child: Row(children: const [
-            Text('Spotify'),
-            Spacer(),
-            Text('Conecte nos Ajustes',
-                style: TextStyle(color: AppColors.muted, fontSize: 10)),
+          selected: sourceId == 3,
+          onTap: spotifyConnected ? () => onSource(3) : () {},
+          child: Row(children: [
+            const Text('Spotify'),
+            const Spacer(),
+            Text(
+              spotifyConnected ? 'faixa: em breve' : 'Conecte nos Ajustes',
+              style: const TextStyle(color: AppColors.muted, fontSize: 10),
+            ),
           ]),
         ),
       ),

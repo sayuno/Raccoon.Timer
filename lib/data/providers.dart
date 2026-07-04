@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/schedule.dart';
+import '../services/notification_service.dart';
 import 'database.dart';
 
 /// Singleton database.
@@ -45,6 +46,20 @@ final logsProvider = StreamProvider.family<List<TriggerLog>, int?>((ref, routine
   return db.watchLogs(routineId: routineId);
 });
 
+/// One-time app startup: ask for alarm/notification permissions and re-arm all
+/// active routines. Watched once from the home screen.
+final appStartupProvider = FutureProvider<void>((ref) async {
+  await NotificationService.instance.requestPermissions();
+  await ref.read(databaseProvider).pruneLogs(days: 30);
+  await ref.read(repositoryProvider).rescheduleAll();
+});
+
+/// Whether a Spotify account is connected (UI flag in app_setting).
+final spotifyConnectedProvider = FutureProvider<bool>((ref) async {
+  final db = ref.watch(databaseProvider);
+  return (await db.getSetting('spotify_connected')) == '1';
+});
+
 /// One-second ticker driving live countdowns.
 final tickerProvider = StreamProvider<int>((ref) {
   return Stream.periodic(
@@ -68,14 +83,41 @@ class RoutineRepository {
       id: id == null ? const Value.absent() : Value(id),
       nextTriggerAt: Value(next),
       updatedAt: Value(_now),
-      createdAt: draft.createdAt.present ? draft.createdAt : Value(_now),
+      // Set creation time only for new routines; edits must not overwrite it.
+      createdAt: id == null ? Value(_now) : const Value.absent(),
     );
-    return db.upsertRoutine(withNext);
+    final savedId = await db.upsertRoutine(withNext);
+    await _reschedule(id ?? savedId);
+    return savedId;
+  }
+
+  /// (Re)register the OS alarm for a routine, or cancel it when paused/idle.
+  Future<void> _reschedule(int id) async {
+    final r = await db.routineById(id);
+    if (r == null) return;
+    if (!r.isEnabled || (r.snoozeUntil ?? r.nextTriggerAt) == null) {
+      await NotificationService.instance.cancel(id);
+      return;
+    }
+    final type = await db.typeById(r.typeId);
+    await NotificationService.instance.scheduleNext(r, typeIcon: type?.icon ?? '⏰');
+  }
+
+  /// Re-arm every active routine — call on app start (covers edits made while
+  /// the app was closed and OS restarts).
+  Future<void> rescheduleAll() async {
+    for (final r in await db.activeEnabledRoutines()) {
+      await _reschedule(r.id);
+    }
   }
 
   Future<void> setEnabled(Routine r, bool enabled) async {
     await db.setEnabled(r.id, enabled);
-    if (enabled) await recompute(r.id);
+    if (enabled) {
+      await recompute(r.id);
+    } else {
+      await NotificationService.instance.cancel(r.id);
+    }
   }
 
   Future<void> recompute(int id) async {
@@ -83,6 +125,7 @@ class RoutineRepository {
     if (r == null) return;
     final next = Scheduler.nextTrigger(r, fromMs: _now);
     await db.upsertRoutine(RoutinesCompanion(id: Value(id), nextTriggerAt: Value(next)));
+    await _reschedule(id);
   }
 
   /// Rebase the countdown to "now" — e.g. an every-4h routine you dealt with an
@@ -94,6 +137,7 @@ class RoutineRepository {
       nextTriggerAt: Value(next),
       snoozeUntil: const Value(null),
     ));
+    await _reschedule(r.id);
   }
 
   Future<void> markDone(Routine r) async {
@@ -119,9 +163,13 @@ class RoutineRepository {
       createdAt: _now,
     ));
     await db.upsertRoutine(RoutinesCompanion(id: Value(r.id), snoozeUntil: Value(until)));
+    await _reschedule(r.id);
   }
 
-  Future<void> archive(Routine r) => db.archiveRoutine(r.id);
+  Future<void> archive(Routine r) async {
+    await NotificationService.instance.cancel(r.id);
+    await db.archiveRoutine(r.id);
+  }
 
   Future<int> createType(RoutineTypesCompanion c) => db.createType(c);
 

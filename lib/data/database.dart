@@ -176,6 +176,13 @@ class AppDatabase extends _$AppDatabase {
   Future<Routine?> routineById(int id) =>
       (select(routines)..where((r) => r.id.equals(id))).getSingleOrNull();
 
+  Future<RoutineType?> typeById(int id) =>
+      (select(routineTypes)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  Future<List<Routine>> activeEnabledRoutines() => (select(routines)
+        ..where((r) => r.isActive.equals(true) & r.isEnabled.equals(true)))
+      .get();
+
   Stream<List<TriggerLog>> watchLogs({int? routineId, int limit = 200}) {
     final q = select(triggerLogs)
       ..orderBy([(l) => OrderingTerm.desc(l.scheduledAt)])

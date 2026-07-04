@@ -12,7 +12,7 @@ class AudioService {
 
   final _player = AudioPlayer();
 
-  static const _defaultAsset = 'assets/sounds/alarm1.mp3';
+  static const _defaultAsset = 'assets/sounds/alarm1.wav';
 
   /// [sourceId]: 1 = default_alarm, 2 = local, 3 = spotify.
   Future<void> play({

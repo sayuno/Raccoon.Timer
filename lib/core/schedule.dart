@@ -68,30 +68,23 @@ class Scheduler {
     final winStart = _parseHm(r.windowStart);
     final winEnd = _parseHm(r.windowEnd);
 
-    // Advance the candidate until it lands on an allowed weekday and, if a
-    // window is set, inside [winStart, winEnd]. Cap iterations for safety.
+    // Pure "every X" — plus an optional active window. Weekday filtering is a
+    // daily-mode concept and is intentionally NOT applied here (interval has no
+    // weekday UI; applying a stale mask produced huge, wrong countdowns).
+    if (winStart == null || winEnd == null) {
+      return candidate.millisecondsSinceEpoch;
+    }
     for (var i = 0; i < 500; i++) {
-      final okDay = Weekdays.contains(r.weekdaysMask, candidate.weekday);
-      final okWindow = _inWindow(candidate, winStart, winEnd);
-      if (okDay && okWindow) return candidate.millisecondsSinceEpoch;
-
-      if (!okDay) {
-        // jump to start of next day
-        final next = DateTime(candidate.year, candidate.month, candidate.day + 1);
-        candidate = winStart == null
-            ? next
-            : DateTime(next.year, next.month, next.day, winStart.$1, winStart.$2);
-      } else if (winStart != null && winEnd != null) {
-        final startToday = DateTime(candidate.year, candidate.month, candidate.day, winStart.$1, winStart.$2);
-        if (candidate.isBefore(startToday)) {
-          candidate = startToday;
-        } else {
-          // past the window end → next day's window start
-          final n = DateTime(candidate.year, candidate.month, candidate.day + 1, winStart.$1, winStart.$2);
-          candidate = n;
-        }
+      if (_inWindow(candidate, winStart, winEnd)) {
+        return candidate.millisecondsSinceEpoch;
+      }
+      final startToday = DateTime(
+          candidate.year, candidate.month, candidate.day, winStart.$1, winStart.$2);
+      if (candidate.isBefore(startToday)) {
+        candidate = startToday;
       } else {
-        candidate = candidate.add(step);
+        candidate = DateTime(candidate.year, candidate.month, candidate.day + 1,
+            winStart.$1, winStart.$2);
       }
     }
     return null;
