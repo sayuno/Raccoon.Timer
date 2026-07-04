@@ -15,6 +15,8 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _spotifyConnected = false;
+  bool _exactOk = true;
+  int _pending = 0;
 
   @override
   void initState() {
@@ -25,7 +27,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _load() async {
     final db = ref.read(databaseProvider);
     final v = await db.getSetting('spotify_connected');
-    if (mounted) setState(() => _spotifyConnected = v == '1');
+    final exact = await NotificationService.instance.exactAlarmsAllowed();
+    final pending = await NotificationService.instance.pendingCount();
+    if (mounted) {
+      setState(() {
+        _spotifyConnected = v == '1';
+        _exactOk = exact;
+        _pending = pending;
+      });
+    }
+  }
+
+  Future<void> _grantPermissions() async {
+    await NotificationService.instance.requestPermissions();
+    await _load();
   }
 
   bool _busy = false;
@@ -82,9 +97,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Alarmes exatos e notificações'),
-            trailing: const Icon(Icons.chevron_right, color: AppColors.gold),
-            onTap: () => NotificationService.instance.requestPermissions(),
+            subtitle: Text(
+              _exactOk ? 'Concedido' : 'Necessário para o alarme tocar na hora',
+              style: TextStyle(color: _exactOk ? AppColors.good : AppColors.bad, fontSize: 12),
+            ),
+            trailing: _exactOk
+                ? const Icon(Icons.check, color: AppColors.good)
+                : const Icon(Icons.chevron_right, color: AppColors.gold),
+            onTap: _grantPermissions,
           ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Alarmes agendados'),
+            subtitle: const Text('Diagnóstico', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+            trailing: Text('$_pending', style: const TextStyle(fontFamily: kMonoFont, color: AppColors.cyan)),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0x22F5C542),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF5A4D1E)),
+            ),
+            child: const Text(
+              '⚠️ Xiaomi / HyperOS mata apps em segundo plano. Para o alarme tocar '
+              'com o app fechado ou tela travada, ative nas configurações do sistema:\n'
+              '• Autostart / Início automático: LIGADO\n'
+              '• Economia de bateria do app: SEM RESTRIÇÕES\n'
+              '• Trave o app na tela de recentes (cadeado)\n'
+              '• Notificações na tela de bloqueio: PERMITIR',
+              style: TextStyle(color: AppColors.text, fontSize: 12.5, height: 1.5),
+            ),
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );

@@ -63,6 +63,27 @@ class NotificationService {
     } catch (_) {}
   }
 
+  /// Whether the OS currently allows exact alarms (Android 12+). If false, alarms
+  /// may be delayed or dropped — the user must grant "Alarms & reminders".
+  Future<bool> exactAlarmsAllowed() async {
+    try {
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      return (await android?.canScheduleExactNotifications()) ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// How many alarms are currently scheduled with the OS (diagnostic).
+  Future<int> pendingCount() async {
+    try {
+      return (await _plugin.pendingNotificationRequests()).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// Schedule the next fire of [r] at its `nextTriggerAt`/`snoozeUntil`.
   ///
   /// Never throws: if exact-alarm permission is denied (common on MIUI/HyperOS)
