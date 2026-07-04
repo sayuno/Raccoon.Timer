@@ -195,6 +195,12 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> upsertRoutine(RoutinesCompanion c) => into(routines).insertOnConflictUpdate(c);
 
+  /// Partial update by id. Unlike [upsertRoutine]/insertOnConflictUpdate, this
+  /// does NOT require every non-null column to be present, so it is safe for
+  /// touching just nextTriggerAt / snoozeUntil.
+  Future<void> patchRoutine(int id, RoutinesCompanion c) =>
+      (update(routines)..where((r) => r.id.equals(id))).write(c);
+
   Future<void> setEnabled(int id, bool enabled) =>
       (update(routines)..where((r) => r.id.equals(id)))
           .write(RoutinesCompanion(isEnabled: Value(enabled)));

@@ -127,7 +127,7 @@ class RoutineRepository {
     final r = await db.routineById(id);
     if (r == null) return;
     final next = Scheduler.nextTrigger(r, fromMs: _now);
-    await db.upsertRoutine(RoutinesCompanion(id: Value(id), nextTriggerAt: Value(next)));
+    await db.patchRoutine(id, RoutinesCompanion(nextTriggerAt: Value(next)));
     await _reschedule(id);
   }
 
@@ -135,8 +135,7 @@ class RoutineRepository {
   /// hour late restarts its 4h from this moment. Clears any active snooze.
   Future<void> restartFromNow(Routine r) async {
     final next = Scheduler.nextTrigger(r, fromMs: _now);
-    await db.upsertRoutine(RoutinesCompanion(
-      id: Value(r.id),
+    await db.patchRoutine(r.id, RoutinesCompanion(
       nextTriggerAt: Value(next),
       snoozeUntil: const Value(null),
     ));
@@ -152,7 +151,7 @@ class RoutineRepository {
       createdAt: _now,
     ));
     // clear snooze + advance schedule
-    await db.upsertRoutine(RoutinesCompanion(id: Value(r.id), snoozeUntil: const Value(null)));
+    await db.patchRoutine(r.id, const RoutinesCompanion(snoozeUntil: Value(null)));
     await recompute(r.id);
   }
 
@@ -165,7 +164,7 @@ class RoutineRepository {
       statusId: 4, // snoozed
       createdAt: _now,
     ));
-    await db.upsertRoutine(RoutinesCompanion(id: Value(r.id), snoozeUntil: Value(until)));
+    await db.patchRoutine(r.id, RoutinesCompanion(snoozeUntil: Value(until)));
     await _reschedule(r.id);
   }
 
