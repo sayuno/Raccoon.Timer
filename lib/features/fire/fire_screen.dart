@@ -5,6 +5,7 @@ import '../../core/time_utils.dart';
 import '../../data/database.dart';
 import '../../data/providers.dart';
 import '../../services/audio_service.dart';
+import '../../services/spotify_service.dart';
 import '../../theme/app_theme.dart';
 
 /// Full-screen alarm shown when a routine fires (or "Disparar agora").
@@ -24,29 +25,46 @@ class _FireScreenState extends ConsumerState<FireScreen> with SingleTickerProvid
   void initState() {
     super.initState();
     _pulse = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
-    AudioService.instance.play(
-      sourceId: widget.routine.soundSourceId,
-      ref: widget.routine.soundRef,
-      volume: widget.routine.volume,
-      fadeIn: widget.routine.fadeIn,
-    );
+    _startSound();
+  }
+
+  void _startSound() {
+    final r = widget.routine;
+    if (r.soundSourceId == 3 && r.soundRef != null) {
+      // Spotify track; falls back to the default tone if the connection fails.
+      SpotifyService.instance.play(r.soundRef!).catchError((_) {
+        AudioService.instance.play(sourceId: 1, volume: r.volume);
+      });
+    } else {
+      AudioService.instance.play(
+        sourceId: r.soundSourceId,
+        ref: r.soundRef,
+        volume: r.volume,
+        fadeIn: r.fadeIn,
+      );
+    }
+  }
+
+  Future<void> _stopSound() async {
+    await _stopSound();
+    if (widget.routine.soundSourceId == 3) await SpotifyService.instance.stop();
   }
 
   @override
   void dispose() {
     _pulse.dispose();
-    AudioService.instance.stop();
+    _stopSound();
     super.dispose();
   }
 
   Future<void> _done() async {
-    await AudioService.instance.stop();
+    await _stopSound();
     await ref.read(repositoryProvider).markDone(widget.routine);
     if (mounted) Navigator.pop(context);
   }
 
   Future<void> _snooze() async {
-    await AudioService.instance.stop();
+    await _stopSound();
     await ref.read(repositoryProvider).snooze(widget.routine, 5);
     if (mounted) Navigator.pop(context);
   }
@@ -118,7 +136,7 @@ class _FireScreenState extends ConsumerState<FireScreen> with SingleTickerProvid
                   width: double.infinity,
                   child: OutlinedButton(
                     onPressed: () async {
-                      await AudioService.instance.stop();
+                      await _stopSound();
                       if (context.mounted) Navigator.pop(context);
                     },
                     style: OutlinedButton.styleFrom(

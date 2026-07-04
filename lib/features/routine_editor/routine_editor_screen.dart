@@ -6,8 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/schedule.dart';
 import '../../data/database.dart';
 import '../../data/providers.dart';
+import '../../services/spotify_service.dart';
 import '../../theme/app_theme.dart';
 import 'new_type_sheet.dart';
+import 'spotify_track_sheet.dart';
 
 class RoutineEditorScreen extends ConsumerStatefulWidget {
   const RoutineEditorScreen({super.key, this.existing});
@@ -146,6 +148,7 @@ class _RoutineEditorScreenState extends ConsumerState<RoutineEditorScreen> {
             spotifyConnected: ref.watch(spotifyConnectedProvider).value ?? false,
             onSource: (id) => setState(() => _soundSourceId = id),
             onPickLocal: _pickLocalSound,
+            onPickSpotify: _pickSpotifyTrack,
           ),
           const SizedBox(height: 24),
           FilledButton(
@@ -192,6 +195,21 @@ class _RoutineEditorScreenState extends ConsumerState<RoutineEditorScreen> {
       _soundSourceId = 2;
       _soundRef = res.files.single.path;
       _soundLabel = res.files.single.name;
+    });
+  }
+
+  Future<void> _pickSpotifyTrack() async {
+    final track = await showModalBottomSheet<SpotifyTrack>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const SpotifyTrackSheet(),
+    );
+    if (track == null) return;
+    setState(() {
+      _soundSourceId = 3;
+      _soundRef = track.uri;
+      _soundLabel = track.label;
     });
   }
 
@@ -493,12 +511,14 @@ class _SoundPicker extends StatelessWidget {
       required this.soundLabel,
       required this.spotifyConnected,
       required this.onSource,
-      required this.onPickLocal});
+      required this.onPickLocal,
+      required this.onPickSpotify});
   final int sourceId;
   final String? soundLabel;
   final bool spotifyConnected;
   final ValueChanged<int> onSource;
   final VoidCallback onPickLocal;
+  final VoidCallback onPickSpotify;
 
   @override
   Widget build(BuildContext context) {
@@ -527,14 +547,21 @@ class _SoundPicker extends StatelessWidget {
         opacity: spotifyConnected ? 1 : 0.42,
         child: _Radio(
           selected: sourceId == 3,
-          onTap: spotifyConnected ? () => onSource(3) : () {},
+          onTap: spotifyConnected ? onPickSpotify : () {},
           child: Row(children: [
             const Text('Spotify'),
-            const Spacer(),
-            Text(
-              spotifyConnected ? 'faixa: em breve' : 'Conecte nos Ajustes',
-              style: const TextStyle(color: AppColors.muted, fontSize: 10),
-            ),
+            const SizedBox(width: 6),
+            if (spotifyConnected && sourceId == 3 && soundLabel != null)
+              Flexible(
+                child: Text(soundLabel!,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+              )
+            else
+              Text(
+                spotifyConnected ? 'buscar faixa' : 'Conecte nos Ajustes',
+                style: const TextStyle(color: AppColors.muted, fontSize: 10),
+              ),
           ]),
         ),
       ),

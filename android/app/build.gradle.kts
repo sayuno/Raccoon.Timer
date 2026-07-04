@@ -24,13 +24,21 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // spotify_sdk auth redirect (must match SpotifyConfig.redirectUrl and the
+        // Redirect URI registered in the Spotify dashboard: raccoontimer://callback)
+        manifestPlaceholders["redirectSchemeName"] = "raccoontimer"
+        manifestPlaceholders["redirectHostName"] = "callback"
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Spotify App Remote AAR trips R8 without extra keep rules; disable
+            // minification (personal app — size is fine).
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

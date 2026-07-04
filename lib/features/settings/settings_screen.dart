@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/providers.dart';
 import '../../services/notification_service.dart';
+import '../../services/spotify_service.dart';
 import '../../theme/app_theme.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -27,14 +28,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) setState(() => _spotifyConnected = v == '1');
   }
 
+  bool _busy = false;
+
   Future<void> _toggleSpotify() async {
-    // Real OAuth via the Spotify App Remote SDK lands later; this flips the UI
-    // flag so the editor can offer Spotify track search once connected.
     final db = ref.read(databaseProvider);
-    final next = !_spotifyConnected;
-    await db.setSetting('spotify_connected', next ? '1' : '0');
-    ref.invalidate(spotifyConnectedProvider);
-    setState(() => _spotifyConnected = next);
+    setState(() => _busy = true);
+    try {
+      if (_spotifyConnected) {
+        await SpotifyService.instance.disconnect();
+        await db.setSetting('spotify_connected', '0');
+        if (mounted) setState(() => _spotifyConnected = false);
+      } else {
+        final ok = await SpotifyService.instance.connect();
+        await db.setSetting('spotify_connected', ok ? '1' : '0');
+        if (mounted) {
+          setState(() => _spotifyConnected = ok);
+          if (!ok) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Falha ao conectar. O app do Spotify está instalado e logado?'),
+            ));
+          }
+        }
+      }
+      ref.invalidate(spotifyConnectedProvider);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -51,7 +70,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const _Row(label: 'Soneca padrão', value: '5 min'),
           const _Row(label: 'Som padrão', value: 'Alarme 1'),
           const _Group('Contas'),
-          _SpotifyRow(connected: _spotifyConnected, onTap: _toggleSpotify),
+          _SpotifyRow(connected: _spotifyConnected, busy: _busy, onTap: _busy ? null : _toggleSpotify),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Text(
@@ -102,9 +121,10 @@ class _Row extends StatelessWidget {
 }
 
 class _SpotifyRow extends StatelessWidget {
-  const _SpotifyRow({required this.connected, required this.onTap});
+  const _SpotifyRow({required this.connected, required this.busy, required this.onTap});
   final bool connected;
-  final VoidCallback onTap;
+  final bool busy;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +157,10 @@ class _SpotifyRow extends StatelessWidget {
             foregroundColor: AppColors.good,
             side: const BorderSide(color: Color(0xFF1C5A3A)),
           ),
-          child: Text(connected ? 'Desconectar' : 'Conectar'),
+          child: busy
+              ? const SizedBox(
+                  width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : Text(connected ? 'Desconectar' : 'Conectar'),
         ),
       ]),
     );

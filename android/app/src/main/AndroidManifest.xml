@@ -58,5 +58,7 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- spotify_sdk: needed to detect/connect the Spotify app on Android 11+ -->
+        <package android:name="com.spotify.music"/>
     </queries>
 </manifest>
