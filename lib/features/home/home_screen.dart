@@ -29,6 +29,25 @@ class HomeScreen extends ConsumerWidget {
           ],
         ),
         actions: [
+          Builder(builder: (context) {
+            final muted = ref.watch(mutedProvider).value ?? false;
+            return IconButton(
+              tooltip: muted ? 'Sons silenciados' : 'Silenciar sons',
+              icon: Icon(muted ? Icons.notifications_off : Icons.notifications_active,
+                  color: muted ? AppColors.gold : null),
+              onPressed: () async {
+                await ref.read(repositoryProvider).setMuted(!muted);
+                ref.invalidate(mutedProvider);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(!muted
+                        ? 'Sons silenciados — notificações continuam'
+                        : 'Sons reativados'),
+                  ));
+                }
+              },
+            );
+          }),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => Navigator.push(context,

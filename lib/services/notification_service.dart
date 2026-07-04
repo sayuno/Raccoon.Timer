@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -17,12 +19,26 @@ class NotificationService {
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
 
+  // Loud alarm channel. New id (v2) because channel sound/usage are immutable
+  // once created — a rename forces Android to pick up the alarm-stream sound.
   static const _channel = AndroidNotificationChannel(
-    'routine_alarms',
+    'routine_alarms_v2',
     'Alarmes de rotina',
     description: 'Disparos das suas rotinas',
     importance: Importance.max,
     playSound: true,
+    sound: RawResourceAndroidNotificationSound('alarm1'),
+    audioAttributesUsage: AudioAttributesUsage.alarm,
+  );
+
+  // Silent channel — used during global mute / sleep window. Android 8+ ties
+  // sound to the channel, so a silent fire must go through its own channel.
+  static const _silentChannel = AndroidNotificationChannel(
+    'routine_alarms_silent',
+    'Alarmes silenciados',
+    description: 'Disparos sem som (mudo / modo sono)',
+    importance: Importance.high,
+    playSound: false,
   );
 
   Future<void> init({
@@ -47,9 +63,10 @@ class NotificationService {
       onDidReceiveNotificationResponse: (resp) => onTapPayload?.call(resp.payload),
     );
 
-    await _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(_channel);
+    final androidImpl = _plugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await androidImpl?.createNotificationChannel(_channel);
+    await androidImpl?.createNotificationChannel(_silentChannel);
 
     _ready = true;
   }
@@ -60,6 +77,7 @@ class NotificationService {
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       await android?.requestNotificationsPermission();
       await android?.requestExactAlarmsPermission();
+      await android?.requestFullScreenIntentPermission();
     } catch (_) {}
   }
 
@@ -89,7 +107,7 @@ class NotificationService {
   /// Never throws: if exact-alarm permission is denied (common on MIUI/HyperOS)
   /// it silently falls back to an inexact alarm. A scheduling failure must not
   /// break the caller (saving a routine, marking Done, snoozing, etc.).
-  Future<void> scheduleNext(Routine r, {required String typeIcon}) async {
+  Future<void> scheduleNext(Routine r, {required String typeIcon, bool silent = false}) async {
     final at = r.snoozeUntil ?? r.nextTriggerAt;
     if (at == null || !r.isEnabled) {
       await cancel(r.id);
@@ -103,17 +121,25 @@ class NotificationService {
     final isPlainDaily = ScheduleMode.fromValue(r.scheduleMode) == ScheduleMode.daily &&
         (r.weekdaysMask == null || r.weekdaysMask == 0);
 
+    // silent = global mute or sleep window: still show the notification, no sound.
+    final ch = silent ? _silentChannel : _channel;
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
-        _channel.id,
-        _channel.name,
-        channelDescription: _channel.description,
-        importance: Importance.max,
-        priority: Priority.max,
-        fullScreenIntent: true,
+        ch.id,
+        ch.name,
+        channelDescription: ch.description,
+        importance: silent ? Importance.high : Importance.max,
+        priority: silent ? Priority.high : Priority.max,
+        fullScreenIntent: !silent,
         category: AndroidNotificationCategory.alarm,
+        playSound: !silent,
+        sound: silent ? null : const RawResourceAndroidNotificationSound('alarm1'),
+        audioAttributesUsage:
+            silent ? AudioAttributesUsage.notification : AudioAttributesUsage.alarm,
+        // FLAG_INSISTENT (4): loop the alarm sound until dismissed (loud only).
+        additionalFlags: silent ? null : Int32List.fromList(<int>[4]),
       ),
-      iOS: const DarwinNotificationDetails(),
+      iOS: DarwinNotificationDetails(presentSound: !silent),
     );
     final match = isPlainDaily ? DateTimeComponents.time : null;
 
@@ -128,14 +154,20 @@ class NotificationService {
           payload: r.id.toString(),
         );
 
+    // alarmClock (AlarmManager.setAlarmClock) is the most reliable: it fires in
+    // Doze, is treated as a user alarm (survives battery optimization / OEM
+    // killers better) and needs no exact-alarm permission. Fall back if unsupported.
     try {
-      await doSchedule(AndroidScheduleMode.exactAllowWhileIdle);
+      await doSchedule(AndroidScheduleMode.alarmClock);
     } catch (_) {
-      // Exact alarms not permitted → best-effort inexact.
       try {
-        await doSchedule(AndroidScheduleMode.inexactAllowWhileIdle);
+        await doSchedule(AndroidScheduleMode.exactAllowWhileIdle);
       } catch (_) {
-        // Give up silently; the in-app countdown still works.
+        try {
+          await doSchedule(AndroidScheduleMode.inexactAllowWhileIdle);
+        } catch (_) {
+          // Give up silently; the in-app countdown still works.
+        }
       }
     }
   }

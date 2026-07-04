@@ -17,6 +17,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _spotifyConnected = false;
   bool _exactOk = true;
   int _pending = 0;
+  bool _quietEnabled = false;
+  String _quietStart = '23:00';
+  String _quietEnd = '07:00';
 
   @override
   void initState() {
@@ -29,13 +32,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final v = await db.getSetting('spotify_connected');
     final exact = await NotificationService.instance.exactAlarmsAllowed();
     final pending = await NotificationService.instance.pendingCount();
+    final q = await ref.read(quietProvider.future);
     if (mounted) {
       setState(() {
         _spotifyConnected = v == '1';
         _exactOk = exact;
         _pending = pending;
+        _quietEnabled = q.enabled;
+        _quietStart = q.start;
+        _quietEnd = q.end;
       });
     }
+  }
+
+  Future<void> _saveQuiet() async {
+    await ref.read(repositoryProvider).setQuietHours(
+        enabled: _quietEnabled, start: _quietStart, end: _quietEnd);
+    ref.invalidate(quietProvider);
+  }
+
+  Future<void> _pickQuietTime(bool isStart) async {
+    final cur = (isStart ? _quietStart : _quietEnd).split(':');
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: int.parse(cur[0]), minute: int.parse(cur[1])),
+    );
+    if (picked == null) return;
+    final hm =
+        '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+    setState(() {
+      if (isStart) {
+        _quietStart = hm;
+      } else {
+        _quietEnd = hm;
+      }
+    });
+    await _saveQuiet();
   }
 
   Future<void> _grantPermissions() async {
@@ -84,6 +116,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const _Group('Padrões'),
           const _Row(label: 'Soneca padrão', value: '5 min'),
           const _Row(label: 'Som padrão', value: 'Alarme 1'),
+          const _Group('Modo sono'),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            activeThumbColor: AppColors.cyan,
+            title: const Text('Silenciar no horário de sono'),
+            subtitle: const Text('Alarmes disparam sem som nesse período; a notificação continua',
+                style: TextStyle(color: AppColors.muted, fontSize: 12)),
+            value: _quietEnabled,
+            onChanged: (v) async {
+              setState(() => _quietEnabled = v);
+              await _saveQuiet();
+            },
+          ),
+          if (_quietEnabled)
+            Row(children: [
+              Expanded(
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Início'),
+                  trailing: Text(_quietStart,
+                      style: const TextStyle(fontFamily: kMonoFont, color: AppColors.cyan, fontSize: 16)),
+                  onTap: () => _pickQuietTime(true),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Fim'),
+                  trailing: Text(_quietEnd,
+                      style: const TextStyle(fontFamily: kMonoFont, color: AppColors.cyan, fontSize: 16)),
+                  onTap: () => _pickQuietTime(false),
+                ),
+              ),
+            ]),
           const _Group('Contas'),
           _SpotifyRow(connected: _spotifyConnected, busy: _busy, onTap: _busy ? null : _toggleSpotify),
           const Padding(

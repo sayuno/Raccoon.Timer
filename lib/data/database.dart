@@ -156,6 +156,9 @@ class AppDatabase extends _$AppDatabase {
         AppSettingsCompanion.insert(key: 'default_snooze_min', value: const Value('5')),
         AppSettingsCompanion.insert(key: 'default_sound_source_id', value: const Value('1')),
         AppSettingsCompanion.insert(key: 'spotify_connected', value: const Value('0')),
+        AppSettingsCompanion.insert(key: 'quiet_enabled', value: const Value('0')),
+        AppSettingsCompanion.insert(key: 'quiet_start', value: const Value('23:00')),
+        AppSettingsCompanion.insert(key: 'quiet_end', value: const Value('07:00')),
       ]);
     });
   }

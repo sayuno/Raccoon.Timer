@@ -60,6 +60,22 @@ final spotifyConnectedProvider = FutureProvider<bool>((ref) async {
   return (await db.getSetting('spotify_connected')) == '1';
 });
 
+/// Global sound-mute flag (notifications still fire, silently).
+final mutedProvider = FutureProvider<bool>((ref) async {
+  final db = ref.watch(databaseProvider);
+  return (await db.getSetting('sound_muted')) == '1';
+});
+
+/// Sleep-window settings: (enabled, start 'HH:mm', end 'HH:mm').
+final quietProvider = FutureProvider<({bool enabled, String start, String end})>((ref) async {
+  final db = ref.watch(databaseProvider);
+  return (
+    enabled: (await db.getSetting('quiet_enabled')) == '1',
+    start: (await db.getSetting('quiet_start')) ?? '23:00',
+    end: (await db.getSetting('quiet_end')) ?? '07:00',
+  );
+});
+
 /// One-second ticker driving live countdowns.
 final tickerProvider = StreamProvider<int>((ref) {
   return Stream.periodic(
@@ -74,6 +90,32 @@ class RoutineRepository {
   final AppDatabase db;
 
   int get _now => DateTime.now().millisecondsSinceEpoch;
+
+  Future<QuietHours> _quiet() async {
+    final enabled = (await db.getSetting('quiet_enabled')) == '1';
+    final start = _parseMin(await db.getSetting('quiet_start')) ?? 23 * 60;
+    final end = _parseMin(await db.getSetting('quiet_end')) ?? 7 * 60;
+    return QuietHours(enabled: enabled, startMin: start, endMin: end);
+  }
+
+  Future<bool> _globalMuted() async => (await db.getSetting('sound_muted')) == '1';
+
+  /// Whether a fire at [ms] should be silent: global mute on, or the moment
+  /// falls inside the sleep window. The notification still shows either way.
+  Future<bool> _silentAt(int ms) async {
+    if (await _globalMuted()) return true;
+    return (await _quiet()).contains(DateTime.fromMillisecondsSinceEpoch(ms));
+  }
+
+  static int? _parseMin(String? hm) {
+    if (hm == null) return null;
+    final p = hm.split(':');
+    if (p.length != 2) return null;
+    final h = int.tryParse(p[0]);
+    final m = int.tryParse(p[1]);
+    if (h == null || m == null) return null;
+    return h * 60 + m;
+  }
 
   Future<int> saveRoutine(RoutinesCompanion draft, {int? id}) async {
     // Recompute next trigger from the draft's schedule fields.
@@ -102,15 +144,46 @@ class RoutineRepository {
         return;
       }
       final type = await db.typeById(r.typeId);
-      await NotificationService.instance.scheduleNext(r, typeIcon: type?.icon ?? '⏰');
+      final target = r.snoozeUntil ?? r.nextTriggerAt;
+      final silent = target != null && await _silentAt(target);
+      await NotificationService.instance
+          .scheduleNext(r, typeIcon: type?.icon ?? '⏰', silent: silent);
     } catch (_) {}
   }
 
+  /// Toggle global sound mute (notifications still fire, just silent) and re-arm.
+  Future<void> setMuted(bool muted) async {
+    await db.setSetting('sound_muted', muted ? '1' : '0');
+    await rescheduleAll();
+  }
+
+  /// Save sleep-window settings and re-arm all alarms with the new silent state.
+  Future<void> setQuietHours({required bool enabled, required String start, required String end}) async {
+    await db.setSetting('quiet_enabled', enabled ? '1' : '0');
+    await db.setSetting('quiet_start', start);
+    await db.setSetting('quiet_end', end);
+    await rescheduleAll();
+  }
+
   /// Re-arm every active routine — call on app start (covers edits made while
-  /// the app was closed and OS restarts).
+  /// the app was closed and OS restarts). Also catches up past-due routines so
+  /// the countdown never stays frozen at 00:00.
   Future<void> rescheduleAll() async {
     for (final r in await db.activeEnabledRoutines()) {
-      await _reschedule(r.id);
+      final target = r.snoozeUntil ?? r.nextTriggerAt;
+      if (target != null && target < _now) {
+        // Fire moment passed while the app was closed → log missed + advance.
+        await db.logTrigger(TriggerLogsCompanion.insert(
+          routineId: r.id,
+          scheduledAt: target,
+          statusId: 5, // missed
+          createdAt: _now,
+        ));
+        await db.patchRoutine(r.id, const RoutinesCompanion(snoozeUntil: Value(null)));
+        await recompute(r.id); // sets a fresh future nextTriggerAt + reschedules
+      } else {
+        await _reschedule(r.id);
+      }
     }
   }
 

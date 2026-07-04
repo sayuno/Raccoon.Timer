@@ -26,6 +26,23 @@ class Weekdays {
   static int toggle(int mask, int dartWeekday) => mask ^ bit(dartWeekday);
 }
 
+/// Global quiet ("sleep") window during which no alarm fires. A fire that lands
+/// inside the window is pushed to the moment the window ends.
+class QuietHours {
+  const QuietHours({required this.enabled, required this.startMin, required this.endMin});
+  final bool enabled;
+  final int startMin; // minutes since midnight
+  final int endMin;
+
+  bool contains(DateTime t) {
+    if (!enabled || startMin == endMin) return false;
+    final m = t.hour * 60 + t.minute;
+    return startMin <= endMin
+        ? (m >= startMin && m < endMin) // same-day window
+        : (m >= startMin || m < endMin); // window crosses midnight
+  }
+}
+
 /// Pure next-trigger computation. Returns epoch ms of the next fire strictly
 /// after [fromMs], or null if the routine can no longer fire (past one_shot).
 class Scheduler {
@@ -37,10 +54,8 @@ class Scheduler {
         final at = r.oneShotAt;
         if (at == null) return null;
         return at > fromMs ? at : null;
-
       case ScheduleMode.daily:
         return _nextDaily(r, from);
-
       case ScheduleMode.interval:
         return _nextInterval(r, from);
     }
