@@ -46,8 +46,10 @@ class _FireScreenState extends ConsumerState<FireScreen> with SingleTickerProvid
   }
 
   Future<void> _stopSound() async {
-    await _stopSound();
-    if (widget.routine.soundSourceId == 3) await SpotifyService.instance.stop();
+    try {
+      await AudioService.instance.stop();
+      if (widget.routine.soundSourceId == 3) await SpotifyService.instance.stop();
+    } catch (_) {}
   }
 
   @override
@@ -59,13 +61,17 @@ class _FireScreenState extends ConsumerState<FireScreen> with SingleTickerProvid
 
   Future<void> _done() async {
     await _stopSound();
-    await ref.read(repositoryProvider).markDone(widget.routine);
+    try {
+      await ref.read(repositoryProvider).markDone(widget.routine);
+    } catch (_) {}
     if (mounted) Navigator.pop(context);
   }
 
   Future<void> _snooze() async {
     await _stopSound();
-    await ref.read(repositoryProvider).snooze(widget.routine, 5);
+    try {
+      await ref.read(repositoryProvider).snooze(widget.routine, 5);
+    } catch (_) {}
     if (mounted) Navigator.pop(context);
   }
 

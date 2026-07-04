@@ -55,15 +55,19 @@ class NotificationService {
   }
 
   Future<void> requestPermissions() async {
-    await _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
-    await _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestExactAlarmsPermission();
+    try {
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await android?.requestNotificationsPermission();
+      await android?.requestExactAlarmsPermission();
+    } catch (_) {}
   }
 
   /// Schedule the next fire of [r] at its `nextTriggerAt`/`snoozeUntil`.
+  ///
+  /// Never throws: if exact-alarm permission is denied (common on MIUI/HyperOS)
+  /// it silently falls back to an inexact alarm. A scheduling failure must not
+  /// break the caller (saving a routine, marking Done, snoozing, etc.).
   Future<void> scheduleNext(Routine r, {required String typeIcon}) async {
     final at = r.snoozeUntil ?? r.nextTriggerAt;
     if (at == null || !r.isEnabled) {
@@ -78,30 +82,48 @@ class NotificationService {
     final isPlainDaily = ScheduleMode.fromValue(r.scheduleMode) == ScheduleMode.daily &&
         (r.weekdaysMask == null || r.weekdaysMask == 0);
 
-    await _plugin.zonedSchedule(
-      id: r.id,
-      title: '$typeIcon ${r.name}',
-      body: 'Hora da rotina',
-      scheduledDate: when,
-      notificationDetails: NotificationDetails(
-        android: AndroidNotificationDetails(
-          _channel.id,
-          _channel.name,
-          channelDescription: _channel.description,
-          importance: Importance.max,
-          priority: Priority.max,
-          fullScreenIntent: true,
-          category: AndroidNotificationCategory.alarm,
-        ),
-        iOS: const DarwinNotificationDetails(),
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channel.id,
+        _channel.name,
+        channelDescription: _channel.description,
+        importance: Importance.max,
+        priority: Priority.max,
+        fullScreenIntent: true,
+        category: AndroidNotificationCategory.alarm,
       ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      matchDateTimeComponents: isPlainDaily ? DateTimeComponents.time : null,
-      payload: r.id.toString(),
+      iOS: const DarwinNotificationDetails(),
     );
+    final match = isPlainDaily ? DateTimeComponents.time : null;
+
+    Future<void> doSchedule(AndroidScheduleMode mode) => _plugin.zonedSchedule(
+          id: r.id,
+          title: '$typeIcon ${r.name}',
+          body: 'Hora da rotina',
+          scheduledDate: when,
+          notificationDetails: details,
+          androidScheduleMode: mode,
+          matchDateTimeComponents: match,
+          payload: r.id.toString(),
+        );
+
+    try {
+      await doSchedule(AndroidScheduleMode.exactAllowWhileIdle);
+    } catch (_) {
+      // Exact alarms not permitted → best-effort inexact.
+      try {
+        await doSchedule(AndroidScheduleMode.inexactAllowWhileIdle);
+      } catch (_) {
+        // Give up silently; the in-app countdown still works.
+      }
+    }
   }
 
-  Future<void> cancel(int routineId) => _plugin.cancel(id: routineId);
+  Future<void> cancel(int routineId) async {
+    try {
+      await _plugin.cancel(id: routineId);
+    } catch (_) {}
+  }
 
   /// Payload of the notification that cold-started the app (null otherwise).
   Future<String?> launchPayload() async {

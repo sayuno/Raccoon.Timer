@@ -92,15 +92,18 @@ class RoutineRepository {
   }
 
   /// (Re)register the OS alarm for a routine, or cancel it when paused/idle.
+  /// Never throws — notification failures must not break DB actions.
   Future<void> _reschedule(int id) async {
-    final r = await db.routineById(id);
-    if (r == null) return;
-    if (!r.isEnabled || (r.snoozeUntil ?? r.nextTriggerAt) == null) {
-      await NotificationService.instance.cancel(id);
-      return;
-    }
-    final type = await db.typeById(r.typeId);
-    await NotificationService.instance.scheduleNext(r, typeIcon: type?.icon ?? '⏰');
+    try {
+      final r = await db.routineById(id);
+      if (r == null) return;
+      if (!r.isEnabled || (r.snoozeUntil ?? r.nextTriggerAt) == null) {
+        await NotificationService.instance.cancel(id);
+        return;
+      }
+      final type = await db.typeById(r.typeId);
+      await NotificationService.instance.scheduleNext(r, typeIcon: type?.icon ?? '⏰');
+    } catch (_) {}
   }
 
   /// Re-arm every active routine — call on app start (covers edits made while

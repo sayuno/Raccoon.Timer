@@ -78,39 +78,47 @@ class _HeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final off = !routine.isEnabled;
     final target = routine.snoozeUntil ?? routine.nextTriggerAt;
+    final showCountdown = !off && target != null;
     return GestureDetector(
       onTap: () => _openDetail(context, routine),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFF5A4D1E)),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF20222A), Color(0xFF191B22)],
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              _TypeBadge(type: type, size: 38),
-              const SizedBox(width: 10),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(routine.name,
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                const Text('próximo disparo',
-                    style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
-              ]),
-            ]),
-            const SizedBox(height: 12),
-            Text(
-              target == null ? '--:--' : TimeUtils.countdown(target - nowMs),
-              style: kCountdownStyle.copyWith(fontSize: 40),
+      child: Opacity(
+        opacity: off ? 0.6 : 1,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: off ? AppColors.line : const Color(0xFF5A4D1E)),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF20222A), Color(0xFF191B22)],
             ),
-          ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                _TypeBadge(type: type, size: 38),
+                const SizedBox(width: 10),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(routine.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                  Text(off ? 'pausada' : 'próximo disparo',
+                      style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+                ]),
+              ]),
+              const SizedBox(height: 12),
+              Text(
+                showCountdown ? TimeUtils.countdown(target - nowMs) : '--:--',
+                style: kCountdownStyle.copyWith(
+                  fontSize: 40,
+                  color: off ? AppColors.faint : AppColors.gold,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
