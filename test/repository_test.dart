@@ -46,6 +46,32 @@ void main() {
     expect(r.nextTriggerAt! > firstNext, isTrue, reason: 'new target must be later');
   });
 
+  test('editing a routine time actually saves (and keeps createdAt)', () async {
+    final id = await repo.saveRoutine(RoutinesCompanion(
+      name: const Value('Wake'),
+      typeId: const Value(1),
+      scheduleMode: const Value('daily'),
+      atTime: const Value('08:00'),
+      soundSourceId: const Value(1),
+      isEnabled: const Value(true),
+    ));
+    final created = (await db.routineById(id))!.createdAt;
+
+    // edit: change the selected time to 09:30
+    await repo.saveRoutine(RoutinesCompanion(
+      name: const Value('Wake'),
+      typeId: const Value(1),
+      scheduleMode: const Value('daily'),
+      atTime: const Value('09:30'),
+      soundSourceId: const Value(1),
+      isEnabled: const Value(true),
+    ), id: id);
+
+    final r = await db.routineById(id);
+    expect(r!.atTime, '09:30', reason: 'edited time must persist');
+    expect(r.createdAt, created, reason: 'createdAt must be preserved on edit');
+  });
+
   test('markDone rebases interval to now+4h', () async {
     final id = await repo.saveRoutine(RoutinesCompanion(
       name: const Value('Event'),

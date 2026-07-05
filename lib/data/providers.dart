@@ -121,15 +121,27 @@ class RoutineRepository {
     // Recompute next trigger from the draft's schedule fields.
     final probe = _companionToRoutine(draft, id: id ?? 0);
     final next = Scheduler.nextTrigger(probe, fromMs: _now);
-    final withNext = draft.copyWith(
-      id: id == null ? const Value.absent() : Value(id),
-      nextTriggerAt: Value(next),
-      updatedAt: Value(_now),
-      // Set creation time only for new routines; edits must not overwrite it.
-      createdAt: id == null ? Value(_now) : const Value.absent(),
-    );
-    final savedId = await db.upsertRoutine(withNext);
-    await _reschedule(id ?? savedId);
+
+    final int savedId;
+    if (id == null) {
+      // New routine: full insert (all required columns present).
+      savedId = await db.upsertRoutine(draft.copyWith(
+        nextTriggerAt: Value(next),
+        createdAt: Value(_now),
+        updatedAt: Value(_now),
+      ));
+    } else {
+      // Edit: partial update by id — must NOT re-require createdAt (that was the
+      // reason edits silently failed to save).
+      await db.patchRoutine(id, draft.copyWith(
+        id: const Value.absent(),
+        nextTriggerAt: Value(next),
+        updatedAt: Value(_now),
+        createdAt: const Value.absent(),
+      ));
+      savedId = id;
+    }
+    await _reschedule(savedId);
     return savedId;
   }
 
